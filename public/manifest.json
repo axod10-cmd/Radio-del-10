@@ -1,0 +1,25 @@
+{
+  "name": "RADIO ESCOLAR - Colegio Provincial N.º 10",
+  "short_name": "Radio Escolar",
+  "description": "Plataforma de streaming de audio en vivo, chat y fonoteca escolar del Colegio Provincial N.º 10 de La Rioja, Argentina.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#4f46e5",
+  "orientation": "portrait-primary",
+  "categories": ["education", "entertainment", "music"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
