@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, useRef, type ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Broadcast, Channel, Program, RadioSettings, ChatSettings } from '../types/database'
+import { DEFAULT_CHANNELS } from '../config/constants'
 
 interface RadioState {
   // Current broadcast
@@ -31,7 +32,7 @@ export function RadioProvider({ children }: { children: ReactNode }) {
   const [currentBroadcast, setCurrentBroadcast] = useState<Broadcast | null>(null)
   const [currentProgram, setCurrentProgram] = useState<Program | null>(null)
   const [currentChannel, setCurrentChannel] = useState<Channel | null>(null)
-  const [channels, setChannels] = useState<Channel[]>([])
+  const [channels, setChannels] = useState<Channel[]>(DEFAULT_CHANNELS)
   const [radioSettings, setRadioSettings] = useState<RadioSettings | null>(null)
   const [chatSettings, setChatSettings] = useState<ChatSettings | null>(null)
   const [listenerCount, setListenerCount] = useState(0)
@@ -90,7 +91,9 @@ export function RadioProvider({ children }: { children: ReactNode }) {
         .select('*')
         .eq('is_active', true)
         .order('sort_order')
-      setChannels(data || [])
+      if (data && data.length > 0) {
+        setChannels(data)
+      }
     } catch (error) {
       console.error('Error refreshing channels:', error)
     }

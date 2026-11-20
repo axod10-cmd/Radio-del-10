@@ -6,7 +6,7 @@ import { Card } from '../../components/ui/Card'
 import { Spinner } from '../../components/ui/Spinner'
 import { Button } from '../../components/ui/Button'
 import { Radio, ArrowLeft, Disc, Calendar } from 'lucide-react'
-import { ROUTES } from '../../config/constants'
+import { ROUTES, DEFAULT_CHANNELS } from '../../config/constants'
 import { formatDate, formatDuration } from '../../utils/formatters'
 
 export const ChannelPage: React.FC = () => {
@@ -27,7 +27,14 @@ export const ChannelPage: React.FC = () => {
           .eq('slug', slug)
           .single()
 
-        if (chanErr || !chanData) throw chanErr
+        if (chanErr || !chanData) {
+          const fallback = DEFAULT_CHANNELS.find((c) => c.slug === slug)
+          if (fallback) {
+            setChannel(fallback)
+            return
+          }
+          throw chanErr
+        }
         setChannel(chanData)
 
         const [progsRes, recsRes] = await Promise.all([
