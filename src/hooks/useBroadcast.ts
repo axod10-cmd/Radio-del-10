@@ -145,122 +145,191 @@ export function useBroadcast(): UseBroadcastReturn {
       setConnectionState('connecting')
 
       try {
-        // Check for existing live broadcast
-        const { data: existingBroadcast } = await supabase
-          .from('broadcasts')
-          .select('id')
-          .eq('status', 'live')
-          .maybeSingle()
+        // Check for existing live broadcast if Supabase is connected
+        const isDemo = profile.id.startsWith('demo-')
+        if (!isDemo) {
+          try {
+            const { data: existingBroadcast } = await supabase
+              .from('broadcasts')
+              .select('id')
+              .eq('status', 'live')
+              .maybeSingle()
 
-        if (existingBroadcast) {
-          // Check if simultaneous broadcasts are allowed
-          const { data: settings } = await supabase
-            .from('radio_settings')
-            .select('allow_simultaneous_broadcasts')
-            .limit(1)
-            .maybeSingle()
+            if (existingBroadcast) {
+              const { data: settings } = await supabase
+                .from('radio_settings')
+                .select('allow_simultaneous_broadcasts')
+                .limit(1)
+                .maybeSingle()
 
-          if (!settings?.allow_simultaneous_broadcasts) {
-            setError('Ya hay una transmisión en curso. No se permiten transmisiones simultáneas.')
-            setConnectionState('disconnected')
-            return
+              if (!settings?.allow_simultaneous_broadcasts) {
+                setError('Ya hay una transmisión en curso. No se permiten transmisiones simultáneas.')
+                setConnectionState('disconnected')
+                return
+              }
+            }
+          } catch (e) {
+            console.warn('Could not query existing broadcasts:', e)
           }
         }
 
         const roomName = `radio-${channelId}-${Date.now()}`
+        let broadcast: Broadcast | null = null
 
-        // Create broadcast record
-        const { data: broadcast, error: dbError } = await supabase
-          .from('broadcasts')
-          .insert({
+        // Try creating broadcast record in Supabase
+        if (!isDemo) {
+          try {
+            const { data: dbData, error: dbError } = await supabase
+              .from('broadcasts')
+              .insert({
+                channel_id: channelId,
+                program_id: programId || null,
+                started_by: profile.id,
+                title: title || 'Transmisión en vivo',
+                status: 'live',
+                livekit_room_name: roomName,
+              })
+              .select()
+              .single()
+
+            if (!dbError && dbData) {
+              broadcast = dbData
+            }
+          } catch (e) {
+            console.warn('Could not insert broadcast in Supabase:', e)
+          }
+        }
+
+        // Fallback to local broadcast session if demo or database insert failed
+        if (!broadcast) {
+          broadcast = {
+            id: 'broadcast-' + Date.now(),
             channel_id: channelId,
             program_id: programId || null,
             started_by: profile.id,
             title: title || 'Transmisión en vivo',
             status: 'live',
+            listener_count: 1,
             livekit_room_name: roomName,
-          })
-          .select()
-          .single()
-
-        if (dbError || !broadcast) {
-          throw new Error('Error al crear la transmisión en la base de datos')
-        }
-
-        // Update program status if linked
-        if (programId) {
-          await supabase
-            .from('programs')
-            .update({ status: 'live' })
-            .eq('id', programId)
-        }
-
-        // Get LiveKit token
-        const token = await requestLiveKitToken({
-          roomName,
-          participantName: profile.display_name,
-          participantIdentity: profile.id,
-          canPublish: true,
-        })
-
-        // Connect to LiveKit room
-        const room = new Room({
-          audioCaptureDefaults: {
-            deviceId: selectedMicId || undefined,
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-        })
-
-        room.on(RoomEvent.Disconnected, () => {
-          setIsConnected(false)
-          setConnectionState('disconnected')
-        })
-
-        room.on(RoomEvent.Reconnecting, () => {
-          setConnectionState('reconnecting')
-        })
-
-        room.on(RoomEvent.Reconnected, () => {
-          setConnectionState('connected')
-        })
-
-        room.on(RoomEvent.ParticipantConnected, () => {
-          setListenerCount(room.numParticipants - 1)
-        })
-
-        room.on(RoomEvent.ParticipantDisconnected, () => {
-          setListenerCount(Math.max(0, room.numParticipants - 2))
-        })
-
-        await room.connect(LIVEKIT_URL, token)
-
-        // Publish audio track
-        const tracks = await createLocalTracks({
-          audio: {
-            deviceId: selectedMicId || undefined,
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-          video: false,
-        })
-
-        for (const track of tracks) {
-          await room.localParticipant.publishTrack(track)
-          if (track.kind === Track.Kind.Audio) {
-            const mediaStream = new MediaStream([track.mediaStreamTrack])
-            monitorAudioLevel(mediaStream)
+            started_at: new Date().toISOString(),
+            ended_at: null,
+            duration_seconds: 0,
           }
         }
 
-        roomRef.current = room
+        // Update program status if linked
+        if (programId && !isDemo) {
+          try {
+            await supabase
+              .from('programs')
+              .update({ status: 'live' })
+              .eq('id', programId)
+          } catch {}
+        }
+
+        // Try connecting to LiveKit room
+        let livekitConnected = false
+        if (!isDemo && LIVEKIT_URL) {
+          try {
+            const token = await requestLiveKitToken({
+              roomName,
+              participantName: profile.display_name,
+              participantIdentity: profile.id,
+              canPublish: true,
+            })
+
+            const room = new Room({
+              audioCaptureDefaults: {
+                deviceId: selectedMicId || undefined,
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+              },
+            })
+
+            room.on(RoomEvent.Disconnected, () => {
+              setIsConnected(false)
+              setConnectionState('disconnected')
+            })
+
+            room.on(RoomEvent.Reconnecting, () => {
+              setConnectionState('reconnecting')
+            })
+
+            room.on(RoomEvent.Reconnected, () => {
+              setConnectionState('connected')
+            })
+
+            room.on(RoomEvent.ParticipantConnected, () => {
+              setListenerCount(room.numParticipants - 1)
+            })
+
+            room.on(RoomEvent.ParticipantDisconnected, () => {
+              setListenerCount(Math.max(0, room.numParticipants - 2))
+            })
+
+            await room.connect(LIVEKIT_URL, token)
+
+            const tracks = await createLocalTracks({
+              audio: {
+                deviceId: selectedMicId || undefined,
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+              },
+              video: false,
+            })
+
+            for (const track of tracks) {
+              await room.localParticipant.publishTrack(track)
+              if (track.kind === Track.Kind.Audio) {
+                const mediaStream = new MediaStream([track.mediaStreamTrack])
+                monitorAudioLevel(mediaStream)
+              }
+            }
+
+            roomRef.current = room
+            livekitConnected = true
+          } catch (lkErr) {
+            console.warn('LiveKit connection bypassed or error:', lkErr)
+          }
+        }
+
+        // If LiveKit room is not connected (e.g. demo mode or offline server), activate real local microphone capture
+        if (!livekitConnected) {
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                deviceId: selectedMicId || undefined,
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+              },
+            })
+            testStreamRef.current = stream
+            monitorAudioLevel(stream)
+          } catch (micErr) {
+            console.error('Microphone capture error:', micErr)
+          }
+        }
+
         setCurrentBroadcast(broadcast)
         setIsConnected(true)
         setIsBroadcasting(true)
         setConnectionState('connected')
         setDuration(0)
+        setListenerCount(1)
+
+        // Synchronize with RadioContext and local storage
+        localStorage.setItem(
+          'radio10_active_broadcast',
+          JSON.stringify({
+            broadcast,
+            channelId,
+            startedAt: Date.now(),
+          })
+        )
+        window.dispatchEvent(new CustomEvent('radio_broadcast_change', { detail: broadcast }))
 
         // Start duration timer
         timerRef.current = setInterval(() => {
@@ -303,24 +372,34 @@ export function useBroadcast(): UseBroadcastReturn {
         analyserRef.current = null
       }
 
-      // Update broadcast record
-      if (currentBroadcast) {
-        await supabase
-          .from('broadcasts')
-          .update({
-            status: 'ended',
-            ended_at: new Date().toISOString(),
-            duration_seconds: duration,
-          })
-          .eq('id', currentBroadcast.id)
+      if (testStreamRef.current) {
+        testStreamRef.current.getTracks().forEach((t) => t.stop())
+        testStreamRef.current = null
+      }
 
-        // Update program status if linked
-        if (currentBroadcast.program_id) {
+      localStorage.removeItem('radio10_active_broadcast')
+      window.dispatchEvent(new CustomEvent('radio_broadcast_change', { detail: null }))
+
+      // Update broadcast record
+      if (currentBroadcast && !currentBroadcast.id.startsWith('broadcast-')) {
+        try {
           await supabase
-            .from('programs')
-            .update({ status: 'completed' })
-            .eq('id', currentBroadcast.program_id)
-        }
+            .from('broadcasts')
+            .update({
+              status: 'ended',
+              ended_at: new Date().toISOString(),
+              duration_seconds: duration,
+            })
+            .eq('id', currentBroadcast.id)
+
+          // Update program status if linked
+          if (currentBroadcast.program_id) {
+            await supabase
+              .from('programs')
+              .update({ status: 'completed' })
+              .eq('id', currentBroadcast.program_id)
+          }
+        } catch {}
       }
 
       setIsConnected(false)
@@ -339,12 +418,17 @@ export function useBroadcast(): UseBroadcastReturn {
 
   // Toggle mic
   const toggleMic = useCallback(() => {
+    const enabled = !isMicEnabled
     if (roomRef.current) {
-      const enabled = !isMicEnabled
       roomRef.current.localParticipant.setMicrophoneEnabled(enabled)
-      setIsMicEnabled(enabled)
-      if (!enabled) setAudioLevel(0)
     }
+    if (testStreamRef.current) {
+      testStreamRef.current.getAudioTracks().forEach((track) => {
+        track.enabled = enabled
+      })
+    }
+    setIsMicEnabled(enabled)
+    if (!enabled) setAudioLevel(0)
   }, [isMicEnabled])
 
   // Cleanup on unmount

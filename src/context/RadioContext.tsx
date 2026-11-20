@@ -42,6 +42,22 @@ export function RadioProvider({ children }: { children: ReactNode }) {
   const isLive = currentBroadcast?.status === 'live'
 
   async function refreshBroadcast() {
+    // Check localStorage active broadcast first
+    const active = localStorage.getItem('radio10_active_broadcast')
+    if (active) {
+      try {
+        const parsed = JSON.parse(active)
+        if (parsed.broadcast && parsed.broadcast.status === 'live') {
+          setCurrentBroadcast(parsed.broadcast)
+          broadcastRef.current = parsed.broadcast
+          const chan = channels.find((c) => c.id === parsed.channelId || c.slug === parsed.channelId) || channels[0]
+          setCurrentChannel(chan || null)
+          setListenerCount(parsed.broadcast.listener_count || 1)
+          return
+        }
+      } catch {}
+    }
+
     try {
       const { data: broadcast } = await supabase
         .from('broadcasts')
@@ -116,7 +132,14 @@ export function RadioProvider({ children }: { children: ReactNode }) {
     Promise.all([refreshBroadcast(), refreshChannels(), fetchSettings()])
       .finally(() => setLoading(false))
 
-    // Subscribe to broadcast changes
+    // Handle local or cross-tab broadcast state changes
+    const handleBroadcastChange = () => {
+      refreshBroadcast()
+    }
+    window.addEventListener('radio_broadcast_change', handleBroadcastChange)
+    window.addEventListener('storage', handleBroadcastChange)
+
+    // Subscribe to broadcast changes in Supabase
     const broadcastSub = supabase
       .channel('broadcasts-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'broadcasts' }, () => {
@@ -132,6 +155,8 @@ export function RadioProvider({ children }: { children: ReactNode }) {
     }, 15000)
 
     return () => {
+      window.removeEventListener('radio_broadcast_change', handleBroadcastChange)
+      window.removeEventListener('storage', handleBroadcastChange)
       broadcastSub.unsubscribe()
       clearInterval(interval)
     }
