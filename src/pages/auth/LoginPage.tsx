@@ -1,10 +1,10 @@
 import React, { useState } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
-import { useAuth } from '../../context/AuthContext'
+import { useAuth, DEMO_CREDENTIALS } from '../../context/AuthContext'
 import { Card } from '../../components/ui/Card'
 import { Input } from '../../components/ui/Input'
 import { Button } from '../../components/ui/Button'
-import { Radio, Lock, Mail, ArrowLeft, ShieldAlert, Sparkles } from 'lucide-react'
+import { Radio, Lock, Mail, ArrowLeft, ShieldAlert, Sparkles, KeyRound } from 'lucide-react'
 import { APP_NAME, INSTITUTION_NAME, ROUTES } from '../../config/constants'
 
 export const LoginPage: React.FC = () => {
@@ -34,6 +34,18 @@ export const LoginPage: React.FC = () => {
     if (res.error) {
       setErrorMessage(res.error)
     } else {
+      navigate(from, { replace: true })
+    }
+  }
+
+  const handleQuickSelect = async (cred: typeof DEMO_CREDENTIALS[0]) => {
+    setEmail(cred.email)
+    setPassword(cred.password)
+    setLoading(true)
+    setErrorMessage(null)
+    const res = await signIn(cred.email, cred.password)
+    setLoading(false)
+    if (!res.error) {
       navigate(from, { replace: true })
     }
   }
@@ -109,6 +121,46 @@ export const LoginPage: React.FC = () => {
             </div>
           </div>
         </Card>
+
+        {/* Demo Credentials Box */}
+        <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md p-5 space-y-3 shadow-lg">
+          <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 dark:text-indigo-400">
+            <KeyRound className="w-4 h-4" />
+            <span>Cuentas de Acceso Rápido / Demostración</span>
+          </div>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+            Hacé clic en cualquiera de las siguientes cuentas para ingresar automáticamente:
+          </p>
+
+          <div className="space-y-2 pt-1">
+            {DEMO_CREDENTIALS.map((cred) => (
+              <button
+                key={cred.email}
+                type="button"
+                onClick={() => handleQuickSelect(cred)}
+                disabled={loading}
+                className="w-full text-left p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-indigo-500 dark:hover:border-indigo-500 bg-slate-50/70 dark:bg-slate-800/50 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/30 transition-all group cursor-pointer"
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-xs text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                      {cred.label}
+                    </span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                      {cred.role}
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 group-hover:underline">
+                    Ingresar →
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                  {cred.email} • <span className="text-slate-400">{cred.password}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   )
