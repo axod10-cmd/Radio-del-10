@@ -42,7 +42,34 @@ export function RadioProvider({ children }: { children: ReactNode }) {
   const isLive = currentBroadcast?.status === 'live'
 
   async function refreshBroadcast() {
-    // Check localStorage active broadcast first
+    // 1. Query central /api/broadcast for cross-device live state
+    try {
+      const res = await fetch('/api/broadcast')
+      if (res.ok) {
+        const data = await res.json()
+        if (data.isLive && data.broadcast) {
+          setCurrentBroadcast(data.broadcast)
+          broadcastRef.current = data.broadcast
+          const chan =
+            channels.find(
+              (c) =>
+                c.id === data.broadcast.channel_id ||
+                c.slug === data.broadcast.channel_id
+            ) || channels[0]
+          setCurrentChannel(chan || null)
+          setListenerCount(data.broadcast.listener_count || 1)
+          return
+        } else if (data.isLive === false && !localStorage.getItem('radio10_active_broadcast')) {
+          setCurrentBroadcast(null)
+          setCurrentChannel(null)
+          setCurrentProgram(null)
+          setListenerCount(0)
+          return
+        }
+      }
+    } catch {}
+
+    // 2. Check localStorage active broadcast for same-device instant state
     const active = localStorage.getItem('radio10_active_broadcast')
     if (active) {
       try {
@@ -58,6 +85,7 @@ export function RadioProvider({ children }: { children: ReactNode }) {
       } catch {}
     }
 
+    // 3. Check Supabase database if available
     try {
       const { data: broadcast } = await supabase
         .from('broadcasts')
@@ -147,12 +175,10 @@ export function RadioProvider({ children }: { children: ReactNode }) {
       })
       .subscribe()
 
-    // Poll listener count every 15 seconds when live
+    // Poll broadcast state every 4 seconds across all connected devices
     const interval = setInterval(() => {
-      if (broadcastRef.current?.status === 'live') {
-        refreshBroadcast()
-      }
-    }, 15000)
+      refreshBroadcast()
+    }, 4000)
 
     return () => {
       window.removeEventListener('radio_broadcast_change', handleBroadcastChange)

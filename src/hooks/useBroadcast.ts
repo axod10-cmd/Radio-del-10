@@ -173,7 +173,7 @@ export function useBroadcast(): UseBroadcastReturn {
           }
         }
 
-        const roomName = `radio-${channelId}-${Date.now()}`
+        const roomName = `radio-${channelId}`
         let broadcast: Broadcast | null = null
 
         // Try creating broadcast record in Supabase
@@ -227,14 +227,14 @@ export function useBroadcast(): UseBroadcastReturn {
           } catch {}
         }
 
-        // Try connecting to LiveKit room
+        // Connect to LiveKit WebRTC room
         let livekitConnected = false
-        if (!isDemo && LIVEKIT_URL) {
+        if (LIVEKIT_URL) {
           try {
             const token = await requestLiveKitToken({
               roomName,
-              participantName: profile.display_name,
-              participantIdentity: profile.id,
+              participantName: profile.display_name || 'Locutor',
+              participantIdentity: profile.id || `locutor-${Date.now()}`,
               canPublish: true,
             })
 
@@ -291,11 +291,11 @@ export function useBroadcast(): UseBroadcastReturn {
             roomRef.current = room
             livekitConnected = true
           } catch (lkErr) {
-            console.warn('LiveKit connection bypassed or error:', lkErr)
+            console.warn('LiveKit connection error:', lkErr)
           }
         }
 
-        // If LiveKit room is not connected (e.g. demo mode or offline server), activate real local microphone capture
+        // If LiveKit room is not connected (e.g. offline server), activate local microphone capture
         if (!livekitConnected) {
           try {
             const stream = await navigator.mediaDevices.getUserMedia({
@@ -312,6 +312,19 @@ export function useBroadcast(): UseBroadcastReturn {
             console.error('Microphone capture error:', micErr)
           }
         }
+
+        // Inform central broadcast server for cross-device synchronization
+        fetch('/api/broadcast', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'start',
+            channelId,
+            title: title || 'Transmisión en vivo',
+            roomName,
+            id: broadcast.id,
+          }),
+        }).catch((err) => console.warn('Could not notify broadcast API:', err))
 
         setCurrentBroadcast(broadcast)
         setIsConnected(true)
@@ -379,6 +392,13 @@ export function useBroadcast(): UseBroadcastReturn {
 
       localStorage.removeItem('radio10_active_broadcast')
       window.dispatchEvent(new CustomEvent('radio_broadcast_change', { detail: null }))
+
+      // Notify central broadcast server
+      fetch('/api/broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'stop' }),
+      }).catch((err) => console.warn('Could not notify broadcast stop:', err))
 
       // Update broadcast record
       if (currentBroadcast && !currentBroadcast.id.startsWith('broadcast-')) {

@@ -21,10 +21,13 @@ export const AudioPlayer: React.FC = () => {
   }, [isLive, currentBroadcast, isConnected])
 
   const handlePlayToggle = () => {
-    if (!isLive || !currentBroadcast?.livekit_room_name) return
+    if (!isLive) return
+    const roomName =
+      currentBroadcast?.livekit_room_name ||
+      `radio-${currentChannel?.slug || currentBroadcast?.channel_id || 'enigma-tv'}`
 
     if (!isConnected) {
-      connect(currentBroadcast.livekit_room_name)
+      connect(roomName)
     } else {
       togglePlay()
     }

@@ -72,6 +72,19 @@ export function useListener(): UseListenerReturn {
       roomRef.current = room
       setIsConnected(true)
       setConnectionState('connected')
+
+      // Attach existing tracks if broadcaster is already speaking in the room
+      room.remoteParticipants.forEach((participant) => {
+        participant.trackPublications.forEach((pub) => {
+          if (pub.track && pub.track.kind === Track.Kind.Audio) {
+            const element = pub.track.attach()
+            element.volume = volume / 100
+            document.body.appendChild(element)
+            audioRef.current = element
+            setIsPlaying(true)
+          }
+        })
+      })
     } catch (err) {
       console.error('Listener connection error:', err)
       setError('Error al conectar con la transmisión')
