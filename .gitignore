@@ -29,3 +29,6 @@ lanzador.env
 *.njsproj
 *.sln
 *.sw?
+
+.vercel
+.env*
